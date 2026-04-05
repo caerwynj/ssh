@@ -1,5 +1,6 @@
 <../../../../../mkconfig
 
+INCLUDES=-I../../../../../module
 TARG=\
 	ssh-rsa.dis\
 	ssh-dsa.dis\
@@ -15,7 +16,7 @@ SYSMODULES=\
 	string.m\
 
 MODULES=\
-        $ROOT/appl/cmd/auth/factotum/authio.m\
+        ../../../../../module/authio.m\
 
 DISBIN=$ROOT/dis/auth/proto
 

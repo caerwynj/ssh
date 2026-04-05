@@ -20,7 +20,7 @@ include "keyring.m";
 	kr: Keyring;
 	IPint, DSAsk, DSApk: import kr;
 
-include "../appl/cmd/auth/factotum/authio.m";
+include "authio.m";
 	authio: Authio;
 	Aattr, Aval, Aquery: import Authio;
 	Attr, IO, Key, Authinfo: import authio;
