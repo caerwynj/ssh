@@ -14,7 +14,7 @@ include "security.m";
 	random: Random;
 include "keyring.m";
 	kr: Keyring;
-	IPint, RSAsk, RSApk, RSAsig, DSAsk, DSApk, DSAsig, DigestState: import kr;
+	IPint, RSAsk, RSApk, RSAsig, DSAsk, DSApk, DSAsig, DigestState, Chachastate, AESGCMstate: import kr;
 include "factotum.m";
 	fact: Factotum;
 include "encoding.m";
@@ -41,17 +41,22 @@ Dhexchangemax:	con 8*1024;
 
 Seqmax:	con big 2**32;
 
-dhgroup1, dhgroup14: ref Dh;
+dhgroup1, dhgroup14, dhgroup16: ref Dh;
 
 # what we support.  these arrays are index by types in sshlib.m, keep them in sync!
 knownkex := array[] of {
 	"diffie-hellman-group1-sha1",
 	"diffie-hellman-group14-sha1",
 	"diffie-hellman-group-exchange-sha1",
+	"diffie-hellman-group14-sha256",
+	"diffie-hellman-group16-sha512",
+	"curve25519-sha256",
 };
 knownhostkey := array[] of {
 	"ssh-dss",
 	"ssh-rsa",
+	"rsa-sha2-256",
+	"rsa-sha2-512",
 };
 knownenc := array[] of {
 	"none",
@@ -66,7 +71,10 @@ knownenc := array[] of {
 	"arcfour128",
 	"arcfour256",
 	"3des-cbc",
-	# "blowfish-cbc",  # doesn't work
+	"blowfish-cbc",  # broken, but needed as placeholder for Eblowfish constant
+	"aes128-gcm@openssh.com",
+	"aes256-gcm@openssh.com",
+	"chacha20-poly1305@openssh.com",
 };
 knownmac := array[] of {
 	"none",
@@ -74,6 +82,8 @@ knownmac := array[] of {
 	"hmac-sha1-96",
 	"hmac-md5",
 	"hmac-md5-96",
+	"hmac-sha2-256",
+	"hmac-sha2-512",
 };
 knowncompr := array[] of {
 	"none",
@@ -84,10 +94,10 @@ knownauthmeth := array[] of {
 };
 
 # what we want to do by default, first is preferred
-defkex :=	array[] of {Dgroupexchange, Dgroup14, Dgroup1};
-defhostkey :=	array[] of {Hrsa, Hdss};
-defenc :=	array[] of {Eaes128cbc, Eaes192cbc, Eaes256cbc, Eaes128ctr, Eaes192ctr, Eaes256ctr, Earcfour128, Earcfour256, Earcfour, E3descbc};
-defmac :=	array[] of {Msha1_96, Msha1, Mmd5, Mmd5_96};
+defkex :=	array[] of {Dcurve25519sha256, Dgroup16sha512, Dgroup14sha256, Dgroup14, Dgroupexchange, Dgroup1};
+defhostkey :=	array[] of {Hrsasha256, Hrsasha512, Hrsa, Hdss};
+defenc :=	array[] of {Eaes256ctr, Eaes192ctr, Eaes128ctr, Eaes128cbc, Eaes192cbc, Eaes256cbc, Earcfour128, Earcfour256, Earcfour, E3descbc};
+defmac :=	array[] of {Msha2_256, Msha2_512, Msha1_96, Msha1, Mmd5, Mmd5_96};
 defcompr :=	array[] of {Cnone};
 defauthmeth :=	array[] of {Apublickey, Apassword};
 
@@ -172,6 +182,34 @@ init()
 	group14prime := IPint.strtoip(group14primestr, 16);
 	group14gen := IPint.inttoip(2);
 	dhgroup14 = ref Dh (group14prime, group14gen, 2048);
+
+	# RFC 3526 group 16 (4096-bit MODP)
+	group16primestr :=
+		"FFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD1"+
+		"29024E088A67CC74020BBEA63B139B22514A08798E3404DD"+
+		"EF9519B3CD3A431B302B0A6DF25F14374FE1356D6D51C245"+
+		"E485B576625E7EC6F44C42E9A637ED6B0BFF5CB6F406B7ED"+
+		"EE386BFB5A899FA5AE9F24117C4B1FE649286651ECE45B3D"+
+		"C2007CB8A163BF0598DA48361C55D39A69163FA8FD24CF5F"+
+		"83655D23DCA3AD961C62F356208552BB9ED529077096966D"+
+		"670C354E4ABC9804F1746C08CA18217C32905E462E36CE3B"+
+		"E39E772C180E86039B2783A2EC07A28FB5C55DF06F4C52C9"+
+		"DE2BCBF6955817183995497CEA956AE515D2261898FA0510"+
+		"15728E5A8AAAC42DAD33170D04507A33A85521ABDF1CBA64"+
+		"ECFB850458DBEF0A8AEA71575D060C7DB3970F85A6E1E4C7"+
+		"ABF5AE8CDB0933D71E8C94E04A25619DCEE3D2261AD2EE6B"+
+		"F12FFA06D98A0864D87602733EC86A64521F2B18177B200C"+
+		"BBE117577A615D6C770988C0BAD946E208E24FA074E5AB31"+
+		"43DB5BFCE0FD108E4B82D120A92108011A723C12A787E6D7"+
+		"88719A10BDBA5B2699C327186AF4E23C1A946834B6150BDA"+
+		"2583E9CA2AD44CE8DBBBC2DB04DE8EF92E8EFC141FBECAA6"+
+		"287C59474E6BC05D99B2964FA090C3A2233BA186515BE7ED"+
+		"1F612970CEE2D7AFB81BDD762170481CD0069127D5B05AA9"+
+		"93B4EA988D8FDDC186FFB7DC90A6C08F4DF435C934063199"+
+		"FFFFFFFFFFFFFFFF";
+	group16prime := IPint.strtoip(group16primestr, 16);
+	group16gen := IPint.inttoip(2);
+	dhgroup16 = ref Dh (group16prime, group16gen, 4096);
 }
 
 msgname(t: int): string
@@ -324,11 +362,16 @@ xkeyexchange(c: ref Sshc, m: ref Rssh): (int, int, list of ref Tssh)
 		(c.newtosrv, c.newfromsrv) = Keys.new(c.usecfg);
 		case hd c.usecfg.kex {
 		"diffie-hellman-group1-sha1" =>
-			c.kex = ref Kex (0, dhgroup1, nil, nil);
-		"diffie-hellman-group14-sha1" =>
-			c.kex = ref Kex (0, dhgroup14, nil, nil);
+			c.kex = ref Kex (0, dhgroup1, nil, nil, nil, nil);
+		"diffie-hellman-group14-sha1" or
+		"diffie-hellman-group14-sha256" =>
+			c.kex = ref Kex (0, dhgroup14, nil, nil, nil, nil);
+		"diffie-hellman-group16-sha512" =>
+			c.kex = ref Kex (0, dhgroup16, nil, nil, nil, nil);
 		"diffie-hellman-group-exchange-sha1" =>
-			c.kex = ref Kex (1, nil, nil, nil);
+			c.kex = ref Kex (1, nil, nil, nil, nil, nil);
+		"curve25519-sha256" =>
+			c.kex = ref Kex (2, nil, nil, nil, nil, nil);
 		* =>
 			raise "internal error, unknown kex alg";
 		}
@@ -339,9 +382,17 @@ xkeyexchange(c: ref Sshc, m: ref Rssh): (int, int, list of ref Tssh)
 			tms = keyexchangestart(c)::nil;
 
 		tm: ref Tssh;
-		if(c.kex.new) {
+		if(c.kex.new == 1) {
 			vals := array[] of {valint(Dhexchangemin), valint(Dhexchangewant), valint(Dhexchangemax)};
 			tm = ref Tssh (big 0, SSH_MSG_KEX_DH_GEX_REQUEST, vals, 0, nil);
+		} else if(c.kex.new == 2) {
+			# curve25519-sha256
+			c.kex.ecsec = array[32] of byte;
+			c.kex.ecpub = array[32] of byte;
+			kr->curve25519_dh_new(c.kex.ecsec, c.kex.ecpub);
+			c.kex.ecpub[31] &= byte 16r7f;  # clear random bit for SSH interop
+			vals := array[] of {valbytes(c.kex.ecpub)};
+			tm = ref Tssh (big 0, SSH_MSG_KEXDH_INIT, vals, 0, nil);
 		} else {
 			gendh(c.kex);
 			vals := array[] of {valmpint(c.kex.e)};
@@ -387,104 +438,139 @@ xkeyexchange(c: ref Sshc, m: ref Rssh): (int, int, list of ref Tssh)
 		if((c.kexstate & Havenewkeys) != 0)
 			kexerror("kexhd message, but already Havenewkeys?");
 
-		if(c.kex.new && m.t == SSH_MSG_KEX_DH_GEX_REPLY || !c.kex.new && m.t == SSH_MSG_KEXDH_REPLY) {
-			v := xparseall(m, list of {Tstr, Tmpint, Tstr});
+		if(c.kex.new == 1 && m.t == SSH_MSG_KEX_DH_GEX_REPLY || c.kex.new == 0 && m.t == SSH_MSG_KEXDH_REPLY || c.kex.new == 2 && m.t == SSH_MSG_KEXDH_REPLY) {
+			kexalg := hd c.usecfg.kex;
 
-			#string    server public host key and certificates (K_S)
-			#mpint     f
-			#string    signature of H
-			srvksval := v[0];
-			srvfval := v[1];
-			srvsigh := v[2].getbytes();
-			srvks := srvksval.getbytes();
-			srvf := srvfval.getipint();
-
-			# C then
-			# computes K = f^x mod p, H = hash(V_C || V_S || I_C || I_S || K_S
-			# || e || f || K), and verifies the signature s on H.
-			say("calculating key from f from remote");
-			key := srvf.expmod(c.kex.x, c.kex.dhgroup.prime);
-			c.kex.x = nil;
-			#say(sprint("key %s", key.iptostr(16)));
+			key: ref IPint;
+			keypack: array of byte;
 			hashbufs: list of array of byte;
-			if(c.kex.new)
+
+			if(c.kex.new == 2) {
+				# curve25519-sha256: server sends string (not mpint)
+				v := xparseall(m, list of {Tstr, Tstr, Tstr});
+				srvksval := v[0];
+				srvfbytes := v[1].getbytes();
+				srvsigh := v[2].getbytes();
+				srvks := srvksval.getbytes();
+
+				if(len srvfbytes != 32)
+					kexerror("bad curve25519 public key from server");
+
+				# save copies: dh_finish zeroes both x and y
+				srvpubcopy := array[32] of byte;
+				srvpubcopy[:] = srvfbytes;
+				sharedsecret := array[32] of byte;
+				ok := kr->curve25519_dh_finish(c.kex.ecsec, srvfbytes, sharedsecret);
+				zero(c.kex.ecsec);
+				c.kex.ecsec = nil;
+				if(!ok)
+					kexerror("curve25519 key exchange failed");
+
+				keypack = valmpint(IPint.bebytestoip(sharedsecret)).pack();
+				zero(sharedsecret);
+
 				hashbufs = list of {
 					valstr(c.lident).pack(),
 					valstr(c.rident).pack(),
 					valbytes(c.clkexinit).pack(),
 					valbytes(c.srvkexinit).pack(),
 					srvksval.pack(),
-					valint(Dhexchangemin).pack(),
-					valint(Dhexchangewant).pack(),
-					valint(Dhexchangemax).pack(),
-					valmpint(c.kex.dhgroup.prime).pack(),
-					valmpint(c.kex.dhgroup.gen).pack(),
-					valmpint(c.kex.e).pack(),
-					srvfval.pack(),
-					valmpint(key).pack()
+					valbytes(c.kex.ecpub).pack(),
+					valbytes(srvpubcopy).pack(),
+					keypack
 				};
-			else
-				hashbufs = list of {
-					valstr(c.lident).pack(),
-					valstr(c.rident).pack(),
-					valbytes(c.clkexinit).pack(),
-					valbytes(c.srvkexinit).pack(),
-					srvksval.pack(),
-					valmpint(c.kex.e).pack(),
-					srvfval.pack(),
-					valmpint(key).pack()
-				};
-			dhhash := sha1many(hashbufs);
-			zero(c.clkexinit);
-			c.clkexinit = nil;
-			zero(c.srvkexinit);
-			c.srvkexinit = nil;
-			srvfval = nil;
-			if(dflag) say(sprint("hash on dh %s", fingerprint(dhhash)));
+				dhhash := kexhash(kexalg, hashbufs);
+				zero(c.clkexinit);
+				c.clkexinit = nil;
+				zero(c.srvkexinit);
+				c.srvkexinit = nil;
+				if(dflag) say(sprint("hash on dh %s", fingerprint(dhhash)));
 
-			if(c.sessionid == nil)
-				c.sessionid = dhhash;
+				if(c.sessionid == nil)
+					c.sessionid = dhhash;
 
-			err := verifyhostkey(c, hd c.usecfg.hostkey, srvks, srvsigh, dhhash);
-			if(err != nil)
-				kexerror(err);
+				err := verifyhostkey(c, hd c.usecfg.hostkey, srvks, srvsigh, dhhash);
+				if(err != nil)
+					kexerror(err);
 
-			# calculate session keys
-			#Encryption keys MUST be computed as HASH, of a known value and K, as follows:
-			#o  Initial IV client to server: HASH(K || H || "A" || session_id)
-			#    (Here K is encoded as mpint and "A" as byte and session_id as raw
-			#   data.  "A" means the single character A, ASCII 65).
-			#o  Initial IV server to client: HASH(K || H || "B" || session_id)
-			#o  Encryption key client to server: HASH(K || H || "C" || session_id)
-			#o  Encryption key server to client: HASH(K || H || "D" || session_id)
-			#o  Integrity key client to server: HASH(K || H || "E" || session_id)
-			#o  Integrity key server to client: HASH(K || H || "F" || session_id)
+				derivekeys(c, kexalg, keypack, dhhash);
 
-			keypack := valmpint(key).pack();
+				say("we want to use newkeys");
+				c.kexstate |= Havenewkeys|Newkeyssent;
+				tm := ref Tssh (big 0, SSH_MSG_NEWKEYS, nil, 0, nil);
+				return (0, 0, tm::nil);
 
-			keybitsout := c.newtosrv.crypt.keybits;
-			keybitsin := c.newfromsrv.crypt.keybits;
-			macbitsout := c.newtosrv.mac.keybytes*8;
-			macbitsin := c.newfromsrv.mac.keybytes*8;
+			} else {
+				v := xparseall(m, list of {Tstr, Tmpint, Tstr});
 
-			ivc2s := genkey(keybitsout, keypack, dhhash, "A", c.sessionid);
-			ivs2c := genkey(keybitsin, keypack, dhhash, "B", c.sessionid);
-			enckeyc2s := genkey(keybitsout, keypack, dhhash, "C", c.sessionid);
-			enckeys2c := genkey(keybitsin, keypack, dhhash, "D", c.sessionid);
-			mackeyc2s := genkey(macbitsout, keypack, dhhash, "E", c.sessionid);
-			mackeys2c := genkey(macbitsin, keypack, dhhash, "F", c.sessionid);
+				#string    server public host key and certificates (K_S)
+				#mpint     f
+				#string    signature of H
+				srvksval := v[0];
+				srvfval := v[1];
+				srvsigh := v[2].getbytes();
+				srvks := srvksval.getbytes();
+				srvf := srvfval.getipint();
 
-			c.newtosrv.crypt.setup(enckeyc2s, ivc2s);
-			c.newfromsrv.crypt.setup(enckeys2c, ivs2c);
-			c.newtosrv.mac.setup(mackeyc2s);
-			c.newfromsrv.mac.setup(mackeys2c);
+				# C then
+				# computes K = f^x mod p, H = hash(V_C || V_S || I_C || I_S || K_S
+				# || e || f || K), and verifies the signature s on H.
+				say("calculating key from f from remote");
+				key = srvf.expmod(c.kex.x, c.kex.dhgroup.prime);
+				c.kex.x = nil;
+				keypack = valmpint(key).pack();
 
-			say("we want to use newkeys");
-			c.kexstate |= Havenewkeys|Newkeyssent;
-			tm := ref Tssh (big 0, SSH_MSG_NEWKEYS, nil, 0, nil);
-			return (0, 0, tm::nil);
+				if(c.kex.new == 1)
+					hashbufs = list of {
+						valstr(c.lident).pack(),
+						valstr(c.rident).pack(),
+						valbytes(c.clkexinit).pack(),
+						valbytes(c.srvkexinit).pack(),
+						srvksval.pack(),
+						valint(Dhexchangemin).pack(),
+						valint(Dhexchangewant).pack(),
+						valint(Dhexchangemax).pack(),
+						valmpint(c.kex.dhgroup.prime).pack(),
+						valmpint(c.kex.dhgroup.gen).pack(),
+						valmpint(c.kex.e).pack(),
+						srvfval.pack(),
+						keypack
+					};
+				else
+					hashbufs = list of {
+						valstr(c.lident).pack(),
+						valstr(c.rident).pack(),
+						valbytes(c.clkexinit).pack(),
+						valbytes(c.srvkexinit).pack(),
+						srvksval.pack(),
+						valmpint(c.kex.e).pack(),
+						srvfval.pack(),
+						keypack
+					};
+				dhhash := kexhash(kexalg, hashbufs);
+				zero(c.clkexinit);
+				c.clkexinit = nil;
+				zero(c.srvkexinit);
+				c.srvkexinit = nil;
+				srvfval = nil;
+				if(dflag) say(sprint("hash on dh %s", fingerprint(dhhash)));
 
-		} else if(c.kex.new && m.t == SSH_MSG_KEX_DH_GEX_GROUP) {
+				if(c.sessionid == nil)
+					c.sessionid = dhhash;
+
+				err := verifyhostkey(c, hd c.usecfg.hostkey, srvks, srvsigh, dhhash);
+				if(err != nil)
+					kexerror(err);
+
+				derivekeys(c, kexalg, keypack, dhhash);
+
+				say("we want to use newkeys");
+				c.kexstate |= Havenewkeys|Newkeyssent;
+				tm := ref Tssh (big 0, SSH_MSG_NEWKEYS, nil, 0, nil);
+				return (0, 0, tm::nil);
+			}
+
+		} else if(c.kex.new == 1 && m.t == SSH_MSG_KEX_DH_GEX_GROUP) {
 			v := xparseall(m, list of {Tmpint, Tmpint});
 			prime := v[0].getipint();
 			gen := v[1].getipint();
@@ -503,17 +589,32 @@ xkeyexchange(c: ref Sshc, m: ref Rssh): (int, int, list of ref Tssh)
 	return (1, 0, nil);
 }
 
-genkey(needbits: int, k, h: array of byte, x: string, sessionid: array of byte): array of byte
+# return the hash function to use for a given kex algorithm
+kexhash(kexalg: string, l: list of array of byte): array of byte
+{
+	case kexalg {
+	"diffie-hellman-group14-sha256" or
+	"curve25519-sha256" =>
+		return sha256many(l);
+	"diffie-hellman-group16-sha512" =>
+		return sha512many(l);
+	* =>
+		return sha1many(l);
+	}
+}
+
+# derive a key using the hash function appropriate for the kex algorithm
+genkey(kexalg: string, needbits: int, k, h: array of byte, x: string, sessionid: array of byte): array of byte
 {
 	nbytes := needbits/8;
 	if(dflag) say(sprint("genkey, needbits %d, nbytes %d", needbits, nbytes));
-	k1 := sha1many(list of {k, h, array of byte x, sessionid});
+	k1 := kexhash(kexalg, list of {k, h, array of byte x, sessionid});
 	if(nbytes <= len k1)
 		return k1[:nbytes];
 	ks := list of {k1};
 	key := k1;
 	while(len key < nbytes) {
-		kx := sha1many(k::h::ks);
+		kx := kexhash(kexalg, k::h::ks);
 		nkey := array[len key+len kx] of byte;
 		nkey[:] = key;
 		nkey[len key:] = kx;
@@ -521,6 +622,26 @@ genkey(needbits: int, k, h: array of byte, x: string, sessionid: array of byte):
 		ks = rev(kx::rev(ks));
 	}
 	return key[:nbytes];
+}
+
+derivekeys(c: ref Sshc, kexalg: string, keypack, dhhash: array of byte)
+{
+	keybitsout := c.newtosrv.crypt.keybits;
+	keybitsin := c.newfromsrv.crypt.keybits;
+	macbitsout := c.newtosrv.mac.keybytes*8;
+	macbitsin := c.newfromsrv.mac.keybytes*8;
+
+	ivc2s := genkey(kexalg, keybitsout, keypack, dhhash, "A", c.sessionid);
+	ivs2c := genkey(kexalg, keybitsin, keypack, dhhash, "B", c.sessionid);
+	enckeyc2s := genkey(kexalg, keybitsout, keypack, dhhash, "C", c.sessionid);
+	enckeys2c := genkey(kexalg, keybitsin, keypack, dhhash, "D", c.sessionid);
+	mackeyc2s := genkey(kexalg, macbitsout, keypack, dhhash, "E", c.sessionid);
+	mackeys2c := genkey(kexalg, macbitsin, keypack, dhhash, "F", c.sessionid);
+
+	c.newtosrv.crypt.setup(enckeyc2s, ivc2s);
+	c.newfromsrv.crypt.setup(enckeys2c, ivs2c);
+	c.newtosrv.mac.setup(mackeyc2s);
+	c.newfromsrv.mac.setup(mackeys2c);
 }
 
 gendh(k: ref Kex)
@@ -604,16 +725,50 @@ byte 16r2b, byte 16r0e, byte 16r03, byte 16r02, byte 16r1a,
 byte 16r05, byte 16r00,
 byte 16r04, byte 16r14,
 };
-rsasha1msg(d: array of byte, msglen: int): array of byte
+sha256der := array[] of {
+byte 16r30, byte 16r31,
+byte 16r30, byte 16r0d,
+byte 16r06, byte 16r09,
+byte 16r60, byte 16r86, byte 16r48, byte 16r01, byte 16r65, byte 16r03, byte 16r04, byte 16r02, byte 16r01,
+byte 16r05, byte 16r00,
+byte 16r04, byte 16r20,
+};
+sha512der := array[] of {
+byte 16r30, byte 16r51,
+byte 16r30, byte 16r0d,
+byte 16r06, byte 16r09,
+byte 16r60, byte 16r86, byte 16r48, byte 16r01, byte 16r65, byte 16r03, byte 16r04, byte 16r02, byte 16r03,
+byte 16r05, byte 16r00,
+byte 16r04, byte 16r40,
+};
+rsapkcs1msg(d: array of byte, msglen: int, hashalg: string): array of byte
 {
-	h := sha1(d);
+	h: array of byte;
+	der: array of byte;
+	case hashalg {
+	"ssh-rsa" =>
+		h = sha1(d);
+		der = sha1der;
+	"rsa-sha2-256" =>
+		h = sha256(d);
+		der = sha256der;
+	"rsa-sha2-512" =>
+		h = sha512(d);
+		der = sha512der;
+	* =>
+		raise "missing case";
+	}
 	msg := array[msglen] of {* => byte 16rff};
 	msg[0] = byte 0;
 	msg[1] = byte 1;
-	msg[len msg-(1+len sha1der+len h)] = byte 0;
-	msg[len msg-(len sha1der+len h):] = sha1der;
+	msg[len msg-(1+len der+len h)] = byte 0;
+	msg[len msg-(len der+len h):] = der;
 	msg[len msg-len h:] = h;
 	return msg;
+}
+rsasha1msg(d: array of byte, msglen: int): array of byte
+{
+	return rsapkcs1msg(d, msglen, "ssh-rsa");
 }
 
 authrsa(c: ref Sshc): (ref Tssh, string)
@@ -791,8 +946,10 @@ authpassword(c: ref Sshc): (ref Tssh, string)
 verifyhostkey(c: ref Sshc, name: string, ks, sig, h: array of byte): string
 {
 	case name {
-	"ssh-rsa" =>	return verifyrsa(c, ks, sig, h);
-	"ssh-dss" =>	return verifydsa(c, ks, sig, h);
+	"ssh-rsa" =>		return verifyrsa(c, "ssh-rsa", ks, sig, h);
+	"rsa-sha2-256" =>	return verifyrsa(c, "rsa-sha2-256", ks, sig, h);
+	"rsa-sha2-512" =>	return verifyrsa(c, "rsa-sha2-512", ks, sig, h);
+	"ssh-dss" =>		return verifydsa(c, ks, sig, h);
 	}
 	raise "missing case";
 }
@@ -828,7 +985,7 @@ verifyhostkeyfile(c: ref Sshc, alg, fp, hostkey: string): string
 	return "host key denied";
 }
 
-verifyrsa(c: ref Sshc, ks, sig, h: array of byte): string
+verifyrsa(c: ref Sshc, hashalg: string, ks, sig, h: array of byte): string
 {
 	# ssh-rsa host key:
 	#string    "ssh-rsa"
@@ -851,24 +1008,25 @@ verifyrsa(c: ref Sshc, ks, sig, h: array of byte): string
 	hostkey := base64->enc(ks);
 	if(dflag) say("rsa fingerprint: "+fp);
 
-	err = verifyhostkeyfile(c, "ssh-rsa", fp, hostkey);
+	err = verifyhostkeyfile(c, hashalg, fp, hostkey);
 	if(err != nil)
 		return err;
 
 	# signature
-	# string    "ssh-rsa"
+	# string    sig-algorithm-name
 	# string    rsa_signature_blob
 	siga := keya;
 	(siga, err) = sshfmt->parseall(sig, list of {Tstr, Tstr});
 	if(err != nil)
-		return "bad ssh-rsa signature: "+err;
+		return sprint("bad %s signature: %s", hashalg, err);
 	signame = siga[0].getstr();
-	if(signame != "ssh-rsa")
-		return sprint("signature is %#q, expected 'ssh-rsa'", signame);
+	# rsa-sha2-256/512 use same key type but different sig algorithm name
+	if(signame != hashalg && !(hashalg == "ssh-rsa" && signame == "ssh-rsa"))
+		return sprint("signature is %#q, expected %#q", signame, hashalg);
 	sigblob := siga[1].getbytes();
 
 	rsapk := ref RSApk (rsan, rsae);
-	sigmsg := rsasha1msg(h, rsan.bits()/8);
+	sigmsg := rsapkcs1msg(h, rsan.bits()/8, hashalg);
 	rsasig := ref RSAsig (IPint.bebytestoip(sigblob));
 	ok := rsapk.verify(rsasig, IPint.bebytestoip(sigmsg));
 	if(!ok)
@@ -1111,6 +1269,9 @@ Cryptalg.new(t: int): ref Cryptalg
 	Eaes256ctr =>	return ref Cryptalg.Aesctr (kr->AESbsize, 256, nil, nil);
 	Earcfour128 =>	return ref Cryptalg.Arcfour2 (8, 128, nil);
 	Earcfour256 =>	return ref Cryptalg.Arcfour2 (8, 256, nil);
+	Eaes128gcm =>	return ref Cryptalg.Aesgcm (kr->AESbsize, 128, nil, nil, big 0);
+	Eaes256gcm =>	return ref Cryptalg.Aesgcm (kr->AESbsize, 256, nil, nil, big 0);
+	Echacha20poly1305 =>	return ref Cryptalg.Chacha20poly1305 (8, 512, nil, nil, big 0);
 	}
 	raise "missing case";
 }
@@ -1144,6 +1305,17 @@ Cryptalg.setup(cc: self ref Cryptalg, key, ivec: array of byte)
 	Arcfour2 =>
 		c.state = kr->rc4setup(key);
 		c.crypt(array[1536] of byte, 1536, kr->Encrypt);
+	Aesgcm =>
+		c.state = kr->aesgcmsetup(key, ivec);
+		c.ivfixed = array[4] of byte;
+		c.ivfixed[:] = ivec[:4];
+		c.ivcount = big 0;
+	Chacha20poly1305 =>
+		# chacha20-poly1305@openssh.com uses two keys:
+		# first 32 bytes for main cipher, second 32 bytes for header (packet length)
+		c.mainstate = kr->chachasetup(key[:32], nil, 20);
+		c.hdrstate = kr->chachasetup(key[32:64], nil, 20);
+		c.ivcount = big 0;
 	}
 }
 
@@ -1191,6 +1363,10 @@ Cryptalg.crypt(cc: self ref Cryptalg, buf: array of byte, n, direction: int)
 			bufxor(block, key);
 			bufincr(c.counter);
 		}
+	Aesgcm =>
+		; # AEAD cipher handled in packpacket/readpacket
+	Chacha20poly1305 =>
+		; # AEAD cipher handled in packpacket/readpacket
 	}
 }
 
@@ -1216,6 +1392,8 @@ Macalg.new(t: int): ref Macalg
 	Msha1_96 =>	return ref Macalg.Sha1_96 (96/8, kr->SHA1dlen, nil);
 	Mmd5 =>		return ref Macalg.Md5 (kr->MD5dlen, kr->MD5dlen, nil);
 	Mmd5_96 =>	return ref Macalg.Md5_96 (96/8, kr->MD5dlen, nil);
+	Msha2_256 =>	return ref Macalg.Sha2_256 (kr->SHA256dlen, kr->SHA256dlen, nil);
+	Msha2_512 =>	return ref Macalg.Sha2_512 (kr->SHA512dlen, kr->SHA512dlen, nil);
 	* =>	raise "missing case";
 	}
 }
@@ -1251,6 +1429,20 @@ Macalg.hash(mm: self ref Macalg, bufs: list of array of byte, hash: array of byt
 		for(; bufs != nil; bufs = tl bufs)
 			state = kr->hmac_md5(hd bufs, len hd bufs, m.key, nil, state);
 		kr->hmac_md5(nil, 0, m.key, digest, state);
+		hash[:] = digest[:m.nbytes];
+	Sha2_256 =>
+		state: ref DigestState;
+		digest := array[kr->SHA256dlen] of byte;
+		for(; bufs != nil; bufs = tl bufs)
+			state = kr->hmac_sha2_256(hd bufs, len hd bufs, m.key, nil, state);
+		kr->hmac_sha2_256(nil, 0, m.key, digest, state);
+		hash[:] = digest[:m.nbytes];
+	Sha2_512 =>
+		state: ref DigestState;
+		digest := array[kr->SHA512dlen] of byte;
+		for(; bufs != nil; bufs = tl bufs)
+			state = kr->hmac_sha2_512(hd bufs, len hd bufs, m.key, nil, state);
+		kr->hmac_sha2_512(nil, 0, m.key, digest, state);
 		hash[:] = digest[:m.nbytes];
 	* =>
 		raise "missing case";
@@ -1433,6 +1625,24 @@ sha1many(l: list of array of byte): array of byte
 	return h;
 }
 
+sha256many(l: list of array of byte): array of byte
+{
+	st: ref Keyring->DigestState;
+	for(; l != nil; l = tl l)
+		st = kr->sha256(hd l, len hd l, nil, st);
+	kr->sha256(nil, 0, h := array[Keyring->SHA256dlen] of byte, st);
+	return h;
+}
+
+sha512many(l: list of array of byte): array of byte
+{
+	st: ref Keyring->DigestState;
+	for(; l != nil; l = tl l)
+		st = kr->sha512(hd l, len hd l, nil, st);
+	kr->sha512(nil, 0, h := array[Keyring->SHA512dlen] of byte, st);
+	return h;
+}
+
 md5(d: array of byte): array of byte
 {
 	h := array[Keyring->MD5dlen] of byte;
@@ -1444,6 +1654,20 @@ sha1(d: array of byte): array of byte
 {
 	h := array[Keyring->SHA1dlen] of byte;
 	kr->sha1(d, len d, h, nil);
+	return h;
+}
+
+sha256(d: array of byte): array of byte
+{
+	h := array[Keyring->SHA256dlen] of byte;
+	kr->sha256(d, len d, h, nil);
+	return h;
+}
+
+sha512(d: array of byte): array of byte
+{
+	h := array[Keyring->SHA512dlen] of byte;
+	kr->sha512(d, len d, h, nil);
 	return h;
 }
 

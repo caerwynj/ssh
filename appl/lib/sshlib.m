@@ -94,10 +94,10 @@ Sshlib: module
 	};
 
 
-	Dgroup1, Dgroup14, Dgroupexchange: con iota;
-	Hdss, Hrsa: con iota;
-	Enone, Eaes128cbc, Eaes192cbc, Eaes256cbc, Eidea, Earcfour, Eaes128ctr, Eaes192ctr, Eaes256ctr, Earcfour128, Earcfour256, E3descbc, Eblowfish: con iota;
-	Mnone, Msha1, Msha1_96, Mmd5, Mmd5_96: con iota;
+	Dgroup1, Dgroup14, Dgroupexchange, Dgroup14sha256, Dgroup16sha512, Dcurve25519sha256: con iota;
+	Hdss, Hrsa, Hrsasha256, Hrsasha512: con iota;
+	Enone, Eaes128cbc, Eaes192cbc, Eaes256cbc, Eidea, Earcfour, Eaes128ctr, Eaes192ctr, Eaes256ctr, Earcfour128, Earcfour256, E3descbc, Eblowfish, Eaes128gcm, Eaes256gcm, Echacha20poly1305: con iota;
+	Mnone, Msha1, Msha1_96, Mmd5, Mmd5_96, Msha2_256, Msha2_512: con iota;
 	Cnone: con iota;
 	Apublickey, Apassword: con iota; # add keyboard-interactive
 
@@ -122,6 +122,14 @@ Sshlib: module
 			key:	array of byte;
 		Arcfour2 =>  # rfc4345, discarding first 1536 bytes of key stream
 			state:	ref Keyring->RC4state;
+		Aesgcm =>
+			state:	ref Keyring->AESGCMstate;
+			ivfixed:	array of byte;	# 4-byte fixed part
+			ivcount:	big;		# 8-byte invocation counter
+		Chacha20poly1305 =>
+			hdrstate,
+			mainstate:	ref Keyring->Chachastate;
+			ivcount:	big;
 		}
 
 		new:	fn(t: int): ref Cryptalg;
@@ -140,6 +148,8 @@ Sshlib: module
 		Sha1_96 =>
 		Md5 =>
 		Md5_96 =>
+		Sha2_256 =>
+		Sha2_512 =>
 		}
 
 		new:	fn(t: int): ref Macalg;
@@ -181,6 +191,7 @@ Sshlib: module
 		new:	int;
 		dhgroup:	ref Dh;
 		e, x:	ref Keyring->IPint;
+		ecpub, ecsec:	array of byte;	# for curve25519
 	};
 
 	Dh: adt {
